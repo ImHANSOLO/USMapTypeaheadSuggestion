@@ -10,15 +10,15 @@ services:
     ports:
       - "27017:27017"
 
-  # backend:
-  #   build: ./backend
-  #   container_name: usmap_backend
-  #   environment:
-  #     - MONGO_URI=mongodb://mongo:27017
-  #   ports:
-  #     - "4000:4000"
-  #   depends_on:
-  #     - mongo
+  backend:
+    build: ./backend
+    container_name: usmap_backend
+    environment:
+      - MONGO_URI=mongodb://mongo:27017
+    ports:
+      - "4000:4000"
+    depends_on:
+      - mongo
 
   # frontend:
   #   build: ./frontend
