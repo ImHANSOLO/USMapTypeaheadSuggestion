@@ -2,13 +2,13 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"log"
 	"net/http"
 	"os"
-	"strings"
 
 	"github.com/graphql-go/graphql"
+	"github.com/graphql-go/handler"
+	"github.com/rs/cors"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
@@ -21,20 +21,22 @@ type State struct {
 }
 
 func main() {
-    uri := os.Getenv("MONGO_URI") 
+    // 1. 连接 MongoDB
+    uri := os.Getenv("MONGO_URI")
     if uri == "" {
         uri = "mongodb://localhost:27017"
     }
-    ctx := context.Background()
-    client, err := mongo.Connect(ctx, options.Client().ApplyURI(uri))
+    client, err := mongo.Connect(context.Background(), options.Client().ApplyURI(uri))
     if err != nil {
         log.Fatal(err)
     }
-    if err := client.Ping(ctx, readpref.Primary()); err != nil {
+    defer client.Disconnect(context.Background())
+    if err := client.Ping(context.Background(), readpref.Primary()); err != nil {
         log.Fatal(err)
     }
     coll := client.Database("statesdb").Collection("states")
 
+    // 2. 定义 GraphQL Schema
     stateType := graphql.NewObject(graphql.ObjectConfig{
         Name: "State",
         Fields: graphql.Fields{
@@ -42,42 +44,53 @@ func main() {
             "code": &graphql.Field{Type: graphql.String},
         },
     })
-    schema, err := graphql.NewSchema(graphql.SchemaConfig{
-        Query: graphql.NewObject(graphql.ObjectConfig{
-            Name: "RootQuery",
-            Fields: graphql.Fields{
-                "states": &graphql.Field{
-                    Type: graphql.NewList(stateType),
-                    Args: graphql.FieldConfigArgument{
-                        "q": &graphql.ArgumentConfig{Type: graphql.NewNonNull(graphql.String)},
-                    },
-                    Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-                        q := p.Args["q"].(string)
-                        filter := bson.M{"name": bson.M{"$regex": "^" + strings.ToLower(q), "$options": "i"}}
-                        cur, err := coll.Find(ctx, filter)
-                        if err != nil {
-                            return nil, err
-                        }
-                        var out []State
-                        _ = cur.All(ctx, &out)
-                        return out, nil
-                    },
-                },
+    rootQuery := graphql.ObjectConfig{Name: "RootQuery", Fields: graphql.Fields{
+        "states": &graphql.Field{
+            Type: graphql.NewList(stateType),
+            Args: graphql.FieldConfigArgument{
+                "q": &graphql.ArgumentConfig{Type: graphql.String},
             },
-        }),
-    })
+            Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+                filter := bson.M{}
+                if q, ok := p.Args["q"].(string); ok && q != "" {
+                    filter = bson.M{"name": bson.M{"$regex": q, "$options": "i"}}
+                }
+                cur, err := coll.Find(p.Context, filter)
+                if err != nil {
+                    return nil, err
+                }
+                var result []State
+                if err := cur.All(p.Context, &result); err != nil {
+                    return nil, err
+                }
+                return result, nil
+            },
+        },
+    }}
+    schema, err := graphql.NewSchema(graphql.SchemaConfig{Query: graphql.NewObject(rootQuery)})
     if err != nil {
         log.Fatal(err)
     }
 
-    http.HandleFunc("/graphql", func(w http.ResponseWriter, r *http.Request) {
-        var req struct{ Query string }
-        _ = json.NewDecoder(r.Body).Decode(&req)
-        res := graphql.Do(graphql.Params{Schema: schema, RequestString: req.Query})
-        w.Header().Set("Content-Type", "application/json")
-        _ = json.NewEncoder(w).Encode(res)
+    // 3. 包装 HTTP Handler
+    graphqlHandler := handler.New(&handler.Config{
+        Schema:   &schema,
+        Pretty:   true,
+        GraphiQL: true,
     })
+    c := cors.New(cors.Options{
+        AllowedOrigins:   []string{"*"},
+        AllowedMethods:   []string{"GET", "POST", "OPTIONS"},
+        AllowedHeaders:   []string{"Content-Type"},
+        AllowCredentials: true,
+    })
+    http.Handle("/graphql", c.Handler(graphqlHandler))
 
-    log.Println("Backend listening on :4000/graphql")
-    log.Fatal(http.ListenAndServe(":4000", nil))
+    // 4. 启动
+    port := os.Getenv("PORT")
+    if port == "" {
+        port = "4000"
+    }
+    log.Println("Backend listening on :" + port + "/graphql")
+    log.Fatal(http.ListenAndServe(":"+port, nil))
 }
