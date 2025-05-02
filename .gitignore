@@ -6,4 +6,4 @@ backend/server
 # Docker
 mongodata/
 
-*.env
+# *.env
