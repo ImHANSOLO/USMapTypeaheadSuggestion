@@ -1,0 +1,17 @@
+{
+  "name": "usmap-frontend",
+  "version": "1.0.0",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "serve": "serve -s dist -l 8080"
+  },
+  "dependencies": {
+    "vue": "^3.2.0",
+    "serve": "^14.2.0"
+  },
+  "devDependencies": {
+    "vite": "^4.0.0",
+    "@vitejs/plugin-vue": "^4.0.0"
+  }
+}
