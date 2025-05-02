@@ -1,8 +1,12 @@
+# Frontend Dockerfile
+
 FROM node:16-alpine
 WORKDIR /app
+COPY .env .env
 COPY package.json package-lock.json ./
 RUN npm ci
 COPY . .
 RUN npm run build
+RUN npm install -g serve
 EXPOSE 8080
-CMD ["npm","run","serve"]
+CMD ["serve","-s","dist","-l","8080"]
