@@ -1,0 +1,14 @@
+version: "3.8"
+services:
+  mongo:
+    image: mongo:6.0
+    container_name: usmap_mongo
+    restart: unless-stopped
+    volumes:
+      - ./mongo-init.js:/docker-entrypoint-initdb.d/init-states.js:ro
+      - mongodata:/data/db
+    ports:
+      - "27017:27017"
+
+volumes:
+  mongodata:
